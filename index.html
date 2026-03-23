@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Sunrise Alarm</title>
+    <link rel="stylesheet" href="styles.css" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,400&display=swap"
+      rel="stylesheet"
+    />
+  </head>
+  <body>
+    <canvas id="sky-gl" class="sky-gl" aria-hidden="true"></canvas>
+
+    <div class="toolbar" id="toolbar">
+      <div class="toolbar-progress" aria-hidden="false">
+        <div
+          class="progress-track"
+          role="progressbar"
+          aria-valuemin="0"
+          aria-valuemax="100"
+          aria-valuenow="0"
+          aria-label="Sunrise brightness"
+          id="progress-track"
+        >
+          <div class="progress-fill" id="progress-fill"></div>
+        </div>
+        <p class="progress-label" id="progress-label">Not armed</p>
+      </div>
+
+      <div class="toolbar-main">
+        <div class="toolbar-brand">
+          <span class="toolbar-title">Sunrise Alarm</span>
+        </div>
+
+        <div class="toolbar-fields">
+          <label class="field-inline">
+            <span class="field-inline-label">Wake</span>
+            <input type="time" id="wake-time" value="07:00" />
+          </label>
+          <label class="field-inline">
+            <span class="field-inline-label">Ramp</span>
+            <select id="duration">
+              <option value="20">20m</option>
+              <option value="30" selected>30m</option>
+              <option value="45">45m</option>
+              <option value="60">60m</option>
+            </select>
+          </label>
+          <label class="field-inline checkbox-inline">
+            <input type="checkbox" id="sound-enabled" checked />
+            <span>Birds</span>
+          </label>
+          <label class="field-inline checkbox-inline">
+            <input type="checkbox" id="water-sound-enabled" />
+            <span>Water</span>
+          </label>
+        </div>
+
+        <div class="toolbar-actions">
+          <button type="button" class="btn primary" id="btn-arm">
+            Arm
+          </button>
+          <button type="button" class="btn ghost" id="btn-reset" title="After wake: schedule next sunrise and dim until then">
+            Reset alarm
+          </button>
+          <button type="button" class="btn ghost" id="btn-preview">Preview</button>
+          <button type="button" class="btn ghost" id="btn-fullscreen">Fullscreen</button>
+          <button type="button" class="btn ghost" id="btn-disarm">Disarm</button>
+        </div>
+      </div>
+
+      <p class="toolbar-status" id="status" role="status"></p>
+      <p class="toolbar-hint">
+        Black until the ramp starts; stays bright after wake until you tap
+        <strong>Reset alarm</strong> or <strong>Disarm</strong>.
+      </p>
+      <p class="toolbar-meta">
+        Nature recordings: Royal Natal dawn chorus and Cape Rock Thrush
+        (Wikimedia Commons, CC BY 4.0), Bird_singing (public domain), and
+        Hemlock stream (stream in Terrace, BC) by Dirtslayer (Wikimedia
+        Commons, public domain).
+      </p>
+    </div>
+
+    <script src="gl-sky.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>
