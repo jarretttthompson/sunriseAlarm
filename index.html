@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en-GB">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -16,18 +16,36 @@
     <canvas id="sky-gl" class="sky-gl" aria-hidden="true"></canvas>
 
     <div class="toolbar" id="toolbar">
-      <div class="toolbar-progress" aria-hidden="false">
+      <div class="toolbar-timeline-wrap" aria-hidden="false">
         <div
-          class="progress-track"
-          role="progressbar"
-          aria-valuemin="0"
-          aria-valuemax="100"
-          aria-valuenow="0"
-          aria-label="Sunrise brightness"
-          id="progress-track"
+          class="timeline-track"
+          id="timeline-track"
+          role="img"
+          aria-label="Schedule timeline from local midnight; tick labels use 12-hour time"
         >
-          <div class="progress-fill" id="progress-fill"></div>
+          <div class="timeline-ramp-band" id="timeline-ramp-band" hidden></div>
+          <div
+            class="timeline-marker timeline-marker-ramp"
+            id="timeline-marker-ramp"
+            hidden
+          >
+            <span class="timeline-marker-cap"></span>
+            <span class="timeline-marker-tag"></span>
+          </div>
+          <div
+            class="timeline-marker timeline-marker-wake"
+            id="timeline-marker-wake"
+            hidden
+          >
+            <span class="timeline-marker-cap"></span>
+            <span class="timeline-marker-tag"></span>
+          </div>
+          <div class="timeline-marker timeline-marker-now" id="timeline-marker-now">
+            <span class="timeline-marker-cap timeline-marker-cap-now"></span>
+            <span class="timeline-marker-tag"></span>
+          </div>
         </div>
+        <div class="timeline-ticks" id="timeline-ticks"></div>
         <p class="progress-label" id="progress-label">Not armed</p>
       </div>
 
@@ -39,11 +57,25 @@
         <div class="toolbar-fields">
           <label class="field-inline">
             <span class="field-inline-label">Wake</span>
-            <input type="time" id="wake-time" value="07:00" />
+            <input
+              type="text"
+              id="wake-time"
+              value="7:00 AM"
+              inputmode="text"
+              autocomplete="off"
+              spellcheck="false"
+              class="wake-time-input"
+              aria-label="Wake time, 12-hour with AM or PM"
+            />
           </label>
           <label class="field-inline">
-            <span class="field-inline-label">Ramp</span>
-            <select id="duration">
+            <span class="field-inline-label" title="Minutes of sunrise before Wake (full brightness at Wake time)"
+              >Ramp before wake</span
+            >
+            <select
+              id="duration"
+              title="Light increases during this window ending at Wake time"
+            >
               <option value="20">20m</option>
               <option value="30" selected>30m</option>
               <option value="45">45m</option>
@@ -61,11 +93,13 @@
         </div>
 
         <div class="toolbar-actions">
-          <button type="button" class="btn primary" id="btn-arm">
+          <button
+            type="button"
+            class="btn primary"
+            id="btn-arm"
+            title="Schedule the next wake from Wake time and Ramp; tap again after a wake to set the next day"
+          >
             Arm
-          </button>
-          <button type="button" class="btn ghost" id="btn-reset" title="After wake: schedule next sunrise and dim until then">
-            Reset alarm
           </button>
           <button type="button" class="btn ghost" id="btn-preview">Preview</button>
           <button type="button" class="btn ghost" id="btn-fullscreen">Fullscreen</button>
@@ -75,8 +109,10 @@
 
       <p class="toolbar-status" id="status" role="status"></p>
       <p class="toolbar-hint">
-        Black until the ramp starts; stays bright after wake until you tap
-        <strong>Reset alarm</strong> or <strong>Disarm</strong>.
+        <strong>Wake</strong> is when the screen reaches full brightness (your get-up time).
+        <strong>Ramp before wake</strong> is how long the light brightens <em>leading up to</em> Wake — e.g. Wake 10:00 PM and 20m ramp means dimmest at 9:40 PM, brightest at 10:00 PM.
+        Wake uses <strong>12-hour</strong> AM/PM (or 24-hour like 19:35). Black until ramp starts; stays bright after Wake until
+        <strong>Arm</strong> or <strong>Disarm</strong>.
       </p>
       <p class="toolbar-meta">
         Nature recordings: Royal Natal dawn chorus and Cape Rock Thrush

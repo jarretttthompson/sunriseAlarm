@@ -53,30 +53,134 @@ body {
   overflow-y: auto;
 }
 
-.toolbar-progress {
-  margin-bottom: 8px;
+.toolbar-timeline-wrap {
+  margin-bottom: 6px;
 }
 
-.progress-track {
-  height: 5px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.08);
-  overflow: hidden;
+.timeline-track {
+  position: relative;
+  height: 26px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(145, 166, 210, 0.2);
+  overflow: visible;
 }
 
-.progress-fill {
+.timeline-ramp-band {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  border-radius: 6px;
+  background: linear-gradient(
+    90deg,
+    rgba(240, 160, 98, 0.2) 0%,
+    rgba(214, 120, 52, 0.35) 50%,
+    rgba(255, 212, 109, 0.28) 100%
+  );
+  pointer-events: none;
+}
+
+.timeline-marker {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 0;
   height: 100%;
-  width: 0%;
-  border-radius: 999px;
-  background: linear-gradient(90deg, #f0a062 0%, var(--accent) 45%, #ffd46d 100%);
-  transition: width 0.35s ease;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  pointer-events: none;
+  z-index: 2;
 }
+
+.timeline-marker-cap {
+  width: 2px;
+  height: 22px;
+  border-radius: 1px;
+  background: rgba(110, 200, 255, 0.95);
+  box-shadow: 0 0 6px rgba(110, 200, 255, 0.45);
+}
+
+.timeline-marker-wake .timeline-marker-cap {
+  background: rgba(214, 120, 52, 0.98);
+  box-shadow: 0 0 6px rgba(214, 120, 52, 0.5);
+}
+
+.timeline-marker-now .timeline-marker-cap-now {
+  width: 3px;
+  background: #fff;
+  box-shadow: 0 0 8px rgba(255, 255, 255, 0.55);
+}
+
+.timeline-marker-tag {
+  position: absolute;
+  bottom: 100%;
+  margin-bottom: 2px;
+  font-size: 0.56rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: rgba(220, 230, 246, 0.85);
+  white-space: nowrap;
+}
+
+.timeline-marker-now .timeline-marker-tag {
+  font-size: 0.6rem;
+  color: #fff;
+}
+
+.timeline-marker-ghost .timeline-marker-cap {
+  opacity: 0.55;
+}
+
+.timeline-marker-ghost .timeline-marker-tag {
+  opacity: 0.65;
+}
+
+.timeline-marker-clipped .timeline-marker-cap {
+  opacity: 0.72;
+  box-shadow: 0 0 4px rgba(255, 255, 255, 0.35);
+}
+
+.timeline-ramp-band.is-ghost {
+  opacity: 0.42;
+}
+
+.timeline-ticks {
+  position: relative;
+  height: 14px;
+  margin-top: 0;
+  font-size: 0;
+  color: rgba(205, 221, 246, 0.45);
+  line-height: 1;
+  user-select: none;
+}
+
+.timeline-tick {
+  position: absolute;
+  transform: translateX(-50%);
+  font-size: 0.52rem;
+  white-space: nowrap;
+}
+
+.timeline-tick::before {
+  content: "";
+  display: block;
+  width: 1px;
+  height: 4px;
+  background: rgba(205, 221, 246, 0.22);
+  margin: 0 auto 1px;
+}
+
+/* legend removed — marker tags now show times directly */
 
 .progress-label {
-  margin: 4px 0 0;
-  font-size: 0.72rem;
+  margin: 5px 0 0;
+  font-size: 0.7rem;
   font-weight: 500;
   color: var(--ink-muted);
+  line-height: 1.35;
 }
 
 .toolbar-main {
@@ -118,6 +222,7 @@ body {
 }
 
 .field-inline input[type="time"],
+.field-inline input.wake-time-input,
 .field-inline select {
   font: inherit;
   font-size: 0.76rem;
@@ -126,6 +231,10 @@ body {
   border: 1px solid rgba(142, 167, 218, 0.28);
   background: rgba(14, 20, 33, 0.55);
   color: var(--ink);
+}
+
+.field-inline input.wake-time-input {
+  min-width: 6.75rem;
 }
 
 .checkbox-inline {

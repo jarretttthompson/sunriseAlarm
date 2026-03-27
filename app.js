@@ -9,11 +9,20 @@
   const soundCheckbox = document.getElementById("sound-enabled");
   const waterSoundCheckbox = document.getElementById("water-sound-enabled");
   const statusEl = document.getElementById("status");
-  const progressFill = document.getElementById("progress-fill");
   const progressLabel = document.getElementById("progress-label");
-  const progressTrack = document.getElementById("progress-track");
+  const timelineTrack = document.getElementById("timeline-track");
+  const timelineRampBand = document.getElementById("timeline-ramp-band");
+  const timelineMarkerRamp = document.getElementById("timeline-marker-ramp");
+  const timelineMarkerWake = document.getElementById("timeline-marker-wake");
+  const timelineMarkerNow = document.getElementById("timeline-marker-now");
+  const timelineTicks = document.getElementById("timeline-ticks");
+
+  const HOUR_MS = 60 * 60 * 1000;
+  const MIN_TIMELINE_HOURS = 4;
+  const MAX_TIMELINE_HOURS = 36;
+  let timelineTickBucket = "";
+
   const btnArm = document.getElementById("btn-arm");
-  const btnReset = document.getElementById("btn-reset");
   const btnPreview = document.getElementById("btn-preview");
   const btnFullscreen = document.getElementById("btn-fullscreen");
   const btnDisarm = document.getElementById("btn-disarm");
@@ -47,8 +56,257 @@
   let previewActive = false;
 
   function parseTimeToMinutes(value) {
-    const [h, m] = value.split(":").map(Number);
+    const s = String(value || "").trim();
+    const match =
+      /^(\d{1,2}):(\d{2})(?::(\d{2}))?\s*([aApP][mM])?/.exec(s);
+    if (!match) return NaN;
+    let h = parseInt(match[1], 10);
+    const m = parseInt(match[2], 10);
+    const ap = match[4];
+    if (m > 59 || m < 0) return NaN;
+
+    if (ap) {
+      if (h < 1 || h > 12) return NaN;
+      const up = ap.toUpperCase();
+      if (up === "AM") {
+        if (h === 12) h = 0;
+      } else {
+        if (h !== 12) h += 12;
+      }
+    } else if (h > 23 || h < 0) {
+      return NaN;
+    }
+
     return h * 60 + m;
+  }
+
+  /** 12-hour display for the wake field (e.g. 8:48 PM). */
+  function minutesToTimeValue12(totalMin) {
+    const t = ((totalMin % (24 * 60)) + 24 * 60) % (24 * 60);
+    let h = Math.floor(t / 60);
+    const m = t % 60;
+    const isPm = h >= 12;
+    let h12 = h % 12;
+    if (h12 === 0) h12 = 12;
+    const ap = isPm ? "PM" : "AM";
+    return h12 + ":" + String(m).padStart(2, "0") + " " + ap;
+  }
+
+  function floorToHour(d) {
+    const t = new Date(d);
+    t.setMinutes(0, 0, 0);
+    return t;
+  }
+
+  function ceilToHour(d) {
+    const t = new Date(d);
+    if (t.getMinutes() === 0 && t.getSeconds() === 0 && t.getMilliseconds() === 0)
+      return t;
+    t.setMinutes(0, 0, 0);
+    t.setHours(t.getHours() + 1);
+    return t;
+  }
+
+  function computeTimelineWindow(now, rampStart, wakeAt) {
+    const anchor = new Date(floorToHour(now).getTime() - HOUR_MS);
+    const latest = new Date(
+      Math.max(now.getTime(), rampStart.getTime(), wakeAt.getTime())
+    );
+    const endMin = new Date(ceilToHour(latest).getTime() + HOUR_MS);
+    let spanMs = endMin.getTime() - anchor.getTime();
+    const minMs = MIN_TIMELINE_HOURS * HOUR_MS;
+    const maxMs = MAX_TIMELINE_HOURS * HOUR_MS;
+    if (spanMs < minMs) spanMs = minMs;
+    if (spanMs > maxMs) spanMs = maxMs;
+    return { anchor, spanMs };
+  }
+
+  function formatTime12(d) {
+    return d.toLocaleTimeString(undefined, {
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+    });
+  }
+
+  function formatDayTime12(d) {
+    return d.toLocaleString(undefined, {
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+    });
+  }
+
+  function pctOnTimeline(when, anchor, spanMs) {
+    return ((when.getTime() - anchor.getTime()) / spanMs) * 100;
+  }
+
+  function clampPct(p) {
+    return Math.min(100, Math.max(0, p));
+  }
+
+  function getDisplaySchedule(now) {
+    if (previewActive) return null;
+    const durSel = Math.max(
+      1,
+      Math.min(180, Number(durationSelect.value) || 30)
+    );
+
+    if (armedWakeAt) {
+      return {
+        rampStart: new Date(
+          armedWakeAt.getTime() - armedDurationMin * 60 * 1000
+        ),
+        wakeAt: armedWakeAt,
+        ghost: false,
+      };
+    }
+
+    const wm = parseTimeToMinutes(wakeInput.value);
+    if (!Number.isFinite(wm)) return null;
+    const wakeAt = scheduleNextFullRamp(wm, durSel, now);
+    return {
+      rampStart: new Date(wakeAt.getTime() - durSel * 60 * 1000),
+      wakeAt,
+      ghost: true,
+    };
+  }
+
+  function formatHourLabel(d) {
+    let h = d.getHours();
+    const ap = h >= 12 ? "p" : "a";
+    h = h % 12;
+    if (h === 0) h = 12;
+    return h + ap;
+  }
+
+  function updateTimelineTicks(anchor, spanMs) {
+    const bucket = anchor.getTime() + "_" + spanMs;
+    if (bucket === timelineTickBucket) return;
+    timelineTickBucket = bucket;
+    timelineTicks.replaceChildren();
+
+    const totalHours = Math.round(spanMs / HOUR_MS);
+    let step = 1;
+    if (totalHours > 24) step = 3;
+    else if (totalHours > 12) step = 2;
+
+    const firstHour = ceilToHour(anchor);
+    for (
+      let t = firstHour.getTime();
+      t <= anchor.getTime() + spanMs;
+      t += HOUR_MS
+    ) {
+      const d = new Date(t);
+      const hoursSinceFirst =
+        Math.round((t - firstHour.getTime()) / HOUR_MS);
+      if (hoursSinceFirst % step !== 0) continue;
+
+      const pct = ((t - anchor.getTime()) / spanMs) * 100;
+      if (pct < 0 || pct > 100) continue;
+
+      const el = document.createElement("span");
+      el.className = "timeline-tick";
+      el.style.left = pct + "%";
+      el.textContent = formatHourLabel(d);
+      timelineTicks.appendChild(el);
+    }
+  }
+
+  function setMarker(el, pct, titleText) {
+    el.hidden = false;
+    const c = clampPct(pct);
+    el.style.left = c + "%";
+    const clipped = pct < 0 || pct > 100;
+    el.title =
+      titleText + (clipped ? " (clipped to bar edge — see tooltip time)" : "");
+    el.classList.toggle("timeline-marker-clipped", clipped);
+  }
+
+  function updateTimelineUi() {
+    const now = new Date();
+    const sched = getDisplaySchedule(now);
+
+    let anchor, spanMs;
+    if (sched) {
+      ({ anchor, spanMs } = computeTimelineWindow(
+        now,
+        sched.rampStart,
+        sched.wakeAt
+      ));
+    } else {
+      anchor = new Date(floorToHour(now).getTime() - HOUR_MS);
+      spanMs = MIN_TIMELINE_HOURS * HOUR_MS;
+    }
+
+    updateTimelineTicks(anchor, spanMs);
+
+    const pNow = pctOnTimeline(now, anchor, spanMs);
+    setMarker(timelineMarkerNow, pNow, "Now — " + formatDayTime12(now));
+
+    const nowTag = timelineMarkerNow.querySelector(".timeline-marker-tag");
+    if (nowTag) nowTag.textContent = formatTime12(now);
+
+    if (!sched) {
+      timelineRampBand.hidden = true;
+      timelineMarkerRamp.hidden = true;
+      timelineMarkerWake.hidden = true;
+      timelineRampBand.classList.remove("is-ghost");
+      timelineMarkerRamp.classList.remove("timeline-marker-ghost");
+      timelineMarkerWake.classList.remove("timeline-marker-ghost");
+      timelineTrack.setAttribute(
+        "aria-label",
+        "Preview: ramp markers hidden; end preview to see schedule"
+      );
+      return;
+    }
+
+    const pr = pctOnTimeline(sched.rampStart, anchor, spanMs);
+    const pw = pctOnTimeline(sched.wakeAt, anchor, spanMs);
+    const left = clampPct(Math.min(pr, pw));
+    const right = clampPct(Math.max(pr, pw));
+    const showRamp = right > left + 0.05;
+
+    timelineRampBand.hidden = !showRamp;
+    if (showRamp) {
+      timelineRampBand.style.left = left + "%";
+      timelineRampBand.style.width = right - left + "%";
+    }
+    timelineRampBand.classList.toggle("is-ghost", sched.ghost);
+
+    timelineMarkerRamp.hidden = false;
+    timelineMarkerWake.hidden = false;
+    setMarker(
+      timelineMarkerRamp,
+      pr,
+      "Ramp starts — " + formatTime12(sched.rampStart)
+    );
+    setMarker(
+      timelineMarkerWake,
+      pw,
+      "Full brightness — " + formatTime12(sched.wakeAt)
+    );
+    timelineMarkerRamp.classList.toggle("timeline-marker-ghost", sched.ghost);
+    timelineMarkerWake.classList.toggle("timeline-marker-ghost", sched.ghost);
+
+    const rampTag = timelineMarkerRamp.querySelector(".timeline-marker-tag");
+    if (rampTag) rampTag.textContent = formatTime12(sched.rampStart);
+    const wakeTag = timelineMarkerWake.querySelector(".timeline-marker-tag");
+    if (wakeTag) wakeTag.textContent = formatTime12(sched.wakeAt);
+
+    const spanH = Math.round(spanMs / HOUR_MS);
+    timelineTrack.setAttribute(
+      "aria-label",
+      spanH +
+        "h window. Ramp " +
+        formatTime12(sched.rampStart) +
+        ", full " +
+        formatTime12(sched.wakeAt) +
+        ", now " +
+        formatTime12(now)
+    );
   }
 
   function nextWakeDate(wakeMinutes, now) {
@@ -62,6 +320,11 @@
       target.setMinutes(wakeMinutes);
     }
     return target;
+  }
+
+  /** Next wake time that hasn't passed yet. If the ramp already started, we jump in mid-ramp. */
+  function scheduleNextFullRamp(wakeMinutes, durationMin, now) {
+    return nextWakeDate(wakeMinutes, now);
   }
 
   function progressFromSchedule(wakeAt, durationMin, now) {
@@ -90,22 +353,22 @@
   }
 
   function updateProgressUi() {
-    const raw = activeProgress();
-    const pct = Math.min(100, Math.max(0, Math.round(raw * 100)));
-    progressFill.style.width = pct + "%";
-    progressTrack.setAttribute("aria-valuenow", String(pct));
-
-    const now = Date.now();
-    if (previewActive && now - previewStartMs < 30000) {
-      progressLabel.textContent = `Preview ramp — ${pct}%`;
+    const nowMs = Date.now();
+    if (previewActive && nowMs - previewStartMs < 30000) {
+      const p = Math.round(
+        Math.min(1, (nowMs - previewStartMs) / 30000) * 100
+      );
+      progressLabel.textContent = `Preview ramp — ${p}% (30s demo)`;
       return;
     }
     if (previewActive) {
-      progressLabel.textContent = "Preview hold — full brightness";
+      progressLabel.textContent =
+        "Preview at full brightness — Arm to schedule or Disarm to clear";
       return;
     }
     if (!armedWakeAt) {
-      progressLabel.textContent = "Not armed";
+      progressLabel.textContent =
+        "Not armed — markers show the next run if you Arm with current Wake & Ramp (12-hour clock).";
       return;
     }
     const t = new Date();
@@ -114,16 +377,27 @@
     );
     if (t < start) {
       progressLabel.textContent =
-        "Black — ramp starts " +
-        start.toLocaleTimeString([], {
-          hour: "numeric",
-          minute: "2-digit",
-        });
+        "Black until " +
+        formatTime12(start) +
+        " — then sunrise until Wake (full brightness) at " +
+        formatTime12(armedWakeAt) +
+        " (now " +
+        formatTime12(t) +
+        ").";
     } else if (t < armedWakeAt) {
-      progressLabel.textContent = `Sunrise — ${pct}%`;
+      const raw = progressFromSchedule(armedWakeAt, armedDurationMin, t);
+      const pct = Math.round(raw * 100);
+      progressLabel.textContent =
+        "Sunrise " +
+        pct +
+        "% toward Wake at " +
+        formatTime12(armedWakeAt) +
+        " (now " +
+        formatTime12(t) +
+        ").";
     } else {
       progressLabel.textContent =
-        "Full brightness — tap Reset when you're up";
+        "Full brightness — Arm for the next sunrise or Disarm.";
     }
   }
 
@@ -328,19 +602,33 @@
       armedDurationMin = Number(o.duration) || 30;
 
       const parsed = o.wakeAt ? new Date(o.wakeAt) : null;
+      const now = new Date();
       if (parsed && !Number.isNaN(parsed.getTime())) {
         armedWakeAt = parsed;
+        if (armedWakeAt.getTime() <= now.getTime()) {
+          armedWakeAt = scheduleNextFullRamp(
+            armedWakeMinutes,
+            armedDurationMin,
+            now
+          );
+        }
       } else {
-        armedWakeAt = nextWakeDate(armedWakeMinutes, new Date());
+        armedWakeAt = scheduleNextFullRamp(
+          armedWakeMinutes,
+          armedDurationMin,
+          now
+        );
       }
       persistArmState();
+      wakeInput.value = minutesToTimeValue12(armedWakeMinutes);
 
       ensureAudio();
       syncNaturePlayback();
       requestWakeLock();
       ensureLoop();
       tick();
-      statusEl.textContent = `Schedule restored — wake target ${armedWakeAt.toLocaleString([], { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}`;
+      statusEl.textContent =
+        "Schedule restored — wake target " + formatDayTime12(armedWakeAt);
     } catch {
       clearArmPersistence();
     }
@@ -349,6 +637,7 @@
   function tick() {
     updateNatureRamp();
     updateProgressUi();
+    updateTimelineUi();
   }
 
   function ensureLoop() {
@@ -366,6 +655,8 @@
       if (typeof o.sound === "boolean") soundCheckbox.checked = o.sound;
       if (typeof o.water === "boolean")
         waterSoundCheckbox.checked = o.water;
+      const wm = parseTimeToMinutes(wakeInput.value);
+      if (Number.isFinite(wm)) wakeInput.value = minutesToTimeValue12(wm);
     } catch {
       /* ignore */
     }
@@ -384,57 +675,51 @@
   }
 
   btnArm.addEventListener("click", () => {
-    saveSettings();
     ensureAudio();
     previewActive = false;
     previewStartMs = 0;
+
     const wakeMin = parseTimeToMinutes(wakeInput.value);
-    const durationMin = Number(durationSelect.value);
+    if (!Number.isFinite(wakeMin)) {
+      statusEl.textContent =
+        "Wake time is invalid. Use 12-hour times like 7:07 AM or 8:48 PM (or 24-hour 20:48).";
+      refreshScheduleUi();
+      return;
+    }
+
+    let durationMin = Number(durationSelect.value);
+    if (!Number.isFinite(durationMin) || durationMin < 1) durationMin = 30;
+    durationMin = Math.min(180, durationMin);
+
     const now = new Date();
-    armedWakeAt = nextWakeDate(wakeMin, now);
-    armedDurationMin = durationMin;
     armedWakeMinutes = wakeMin;
+    armedDurationMin = durationMin;
+    armedWakeAt = scheduleNextFullRamp(wakeMin, durationMin, now);
+    wakeInput.value = minutesToTimeValue12(wakeMin);
+    durationSelect.value = String(durationMin);
     persistArmState();
+    saveSettings();
 
     const startAt = new Date(
       armedWakeAt.getTime() - durationMin * 60 * 1000
     );
-    statusEl.textContent = `Armed: black until ${startAt.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}, full at ${armedWakeAt.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`;
+    statusEl.textContent =
+      "Armed: light ramps from " +
+      formatTime12(startAt) +
+      " to " +
+      formatTime12(armedWakeAt) +
+      " (Wake = full brightness) — " +
+      armedWakeAt.toLocaleDateString(undefined, {
+        weekday: "short",
+        month: "short",
+        day: "numeric",
+      });
 
     syncNaturePlayback();
     requestWakeLock();
     ensureLoop();
     tick();
-    updateProgressUi();
-  });
-
-  btnReset.addEventListener("click", () => {
-    if (previewActive && !armedWakeAt) {
-      previewActive = false;
-      previewStartMs = 0;
-      skyRenderer.forceBlack();
-      statusEl.textContent = "Preview cleared.";
-      updateProgressUi();
-      return;
-    }
-    if (!armedWakeAt) {
-      statusEl.textContent = "Arm the alarm first.";
-      return;
-    }
-    previewActive = false;
-    previewStartMs = 0;
-    saveSettings();
-    armedWakeMinutes = parseTimeToMinutes(wakeInput.value);
-    armedDurationMin = Number(durationSelect.value);
-    armedWakeAt = nextWakeDate(armedWakeMinutes, new Date());
-    persistArmState();
-    statusEl.textContent = `Next sunrise: ${armedWakeAt.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })} ${armedWakeAt.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`;
-    ensureAudio();
-    syncNaturePlayback();
-    requestWakeLock();
-    ensureLoop();
-    tick();
-    updateProgressUi();
+    refreshScheduleUi();
   });
 
   btnPreview.addEventListener("click", () => {
@@ -443,7 +728,7 @@
     previewActive = true;
     previewStartMs = Date.now();
     statusEl.textContent =
-      "Preview running — ramps for 30 seconds, then stays bright until Reset or Disarm.";
+      "Preview running — ramps for 30 seconds, then stays bright until Arm or Disarm.";
     syncNaturePlayback();
     ensureLoop();
     tick();
@@ -456,7 +741,7 @@
     previewStartMs = 0;
     skyRenderer.forceBlack();
     statusEl.textContent = "Schedule cleared.";
-    updateProgressUi();
+    refreshScheduleUi();
   });
 
   btnFullscreen.addEventListener("click", () => {
@@ -476,6 +761,16 @@
     syncNaturePlayback();
     saveSettings();
   });
+
+  function refreshScheduleUi() {
+    timelineTickBucket = "";
+    updateTimelineUi();
+    updateProgressUi();
+  }
+
+  wakeInput.addEventListener("input", refreshScheduleUi);
+  wakeInput.addEventListener("change", refreshScheduleUi);
+  durationSelect.addEventListener("change", refreshScheduleUi);
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible" && armedWakeAt) {
       ensureAudio();
@@ -485,6 +780,7 @@
   });
 
   loadSettings();
+  tryRestoreArmState();
 
   const skyRenderer =
     typeof initSunriseSky === "function"
@@ -503,15 +799,15 @@
       "WebGL2 is not available. Use a current Safari or Chrome.";
   }
   skyRenderer.start();
-  skyRenderer.forceBlack();
 
   function uiFrame() {
     updateNatureRamp();
     updateProgressUi();
+    updateTimelineUi();
     requestAnimationFrame(uiFrame);
   }
   requestAnimationFrame(uiFrame);
 
-  tryRestoreArmState();
   updateProgressUi();
+  updateTimelineUi();
 })();
